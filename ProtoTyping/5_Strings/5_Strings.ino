@@ -4,11 +4,11 @@
 
 // ===== PIN CONFIGURATION =====
 const int LASER_PINS[5] = {2, 4, 5, 16, 17};      // Pins to control laser power
-const int PHOTODIODE_PINS[5] = {34, 35, 32, 33, 36}; // Photodiode input pins
+const int PHOTODIODE_PINS[5] = {34, 35, 32, 33, 32}; // Photodiode input pins
 const int LED_PINS[5] = {23, 22, 21, 19, 18};        // Status LED pins
 
 // ===== SETTINGS =====
-const int THRESHOLD = 2000;        // Detection threshold for all sensors
+int THRESHOLDS[5] = {2000, 2000, 2000, 2000, 2000}; // Individual threshold for each sensor
 const int POLL_RATE_MS = 10;       // How fast to check each sensor
 const int REPORT_RATE_MS = 100;    // How often to print status
 
@@ -30,7 +30,7 @@ void sensorLoop(int sensorNum) {
     sensorValues[sensorNum] = analogRead(PHOTODIODE_PINS[sensorNum]);
     
     // Check if beam is broken
-    if (sensorValues[sensorNum] < THRESHOLD) {
+    if (sensorValues[sensorNum] < THRESHOLDS[sensorNum]) {
       beamBroken[sensorNum] = true;
       digitalWrite(LED_PINS[sensorNum], HIGH);  // Turn on status LED
     } else {
@@ -53,7 +53,9 @@ void reportTask(void *parameter) {
       Serial.print(i + 1);
       Serial.print(": ");
       Serial.print(sensorValues[i]);
-      Serial.print(" - ");
+      Serial.print(" (Threshold: ");
+      Serial.print(THRESHOLDS[i]);
+      Serial.print(") - ");
       Serial.println(beamBroken[i] ? "BROKEN" : "OK");
     }
     
@@ -116,6 +118,39 @@ void loop() {
 }
 
 // ===== UTILITY FUNCTIONS =====
+
+// Set threshold for specific sensor
+void setThreshold(int sensorNum, int newThreshold) {
+  if (sensorNum >= 0 && sensorNum < 5) {
+    THRESHOLDS[sensorNum] = newThreshold;
+    Serial.print("Sensor ");
+    Serial.print(sensorNum + 1);
+    Serial.print(" threshold set to: ");
+    Serial.println(newThreshold);
+  } else {
+    Serial.println("Invalid sensor number (use 0-4)");
+  }
+}
+
+// Set all thresholds at once
+void setAllThresholds(int newThreshold) {
+  for (int i = 0; i < 5; i++) {
+    THRESHOLDS[i] = newThreshold;
+  }
+  Serial.print("All thresholds set to: ");
+  Serial.println(newThreshold);
+}
+
+// Print current thresholds
+void printThresholds() {
+  Serial.println("Current Thresholds:");
+  for (int i = 0; i < 5; i++) {
+    Serial.print("  Sensor ");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.println(THRESHOLDS[i]);
+  }
+}
 
 // Turn specific laser ON or OFF
 void controlLaser(int laserNum, bool turnOn) {
