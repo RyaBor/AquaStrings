@@ -3,14 +3,12 @@
 #include "freertos/task.h"
 
 // ===== PIN CONFIGURATION =====
-const int LASER_PINS[5] = {2, 4, 5, 16, 17};      // Pins to control laser power
-const int PHOTODIODE_PINS[5] = {34, 35, 32, 33, 32}; // Photodiode input pins
-const int LED_PINS[5] = {23, 22, 21, 19, 18};        // Status LED pins
+const int PHOTODIODE_PINS[5] = {34, 35, 32, 33, 36}; // Photodiode input pins
 
 // ===== SETTINGS =====
 int THRESHOLDS[5] = {2000, 2000, 2000, 2000, 2000}; // Individual threshold for each sensor
 const int POLL_RATE_MS = 10;       // How fast to check each sensor
-const int REPORT_RATE_MS = 100;    // How often to print status
+const int REPORT_RATE_MS = 500;    // How often to print status
 
 // ===== SHARED DATA =====
 int sensorValues[5] = {0};          // Current photodiode readings
@@ -32,10 +30,8 @@ void sensorLoop(int sensorNum) {
     // Check if beam is broken
     if (sensorValues[sensorNum] < THRESHOLDS[sensorNum]) {
       beamBroken[sensorNum] = true;
-      digitalWrite(LED_PINS[sensorNum], HIGH);  // Turn on status LED
     } else {
       beamBroken[sensorNum] = false;
-      digitalWrite(LED_PINS[sensorNum], LOW);   // Turn off status LED
     }
     
     // Wait before next reading
@@ -83,19 +79,7 @@ void setup() {
   Serial.begin(115200);
   Serial.println("Simple FreeRTOS Laser System Starting...");
   
-  // Setup laser control pins (turn lasers ON)
-  for (int i = 0; i < 5; i++) {
-    pinMode(LASER_PINS[i], OUTPUT);
-    digitalWrite(LASER_PINS[i], HIGH);  // Turn laser ON
-  }
-  
-  // Setup status LED pins
-  for (int i = 0; i < 5; i++) {
-    pinMode(LED_PINS[i], OUTPUT);
-    digitalWrite(LED_PINS[i], LOW);     // Start with LEDs OFF
-  }
-  
-  Serial.println("All lasers powered ON");
+  Serial.println("Lasers powered from external 5V source");
   Serial.println("Creating sensor tasks...");
   
   // Create one task per sensor
@@ -150,24 +134,6 @@ void printThresholds() {
     Serial.print(": ");
     Serial.println(THRESHOLDS[i]);
   }
-}
-
-// Turn specific laser ON or OFF
-void controlLaser(int laserNum, bool turnOn) {
-  if (laserNum >= 0 && laserNum < 5) {
-    digitalWrite(LASER_PINS[laserNum], turnOn ? HIGH : LOW);
-    Serial.print("Laser ");
-    Serial.print(laserNum + 1);
-    Serial.println(turnOn ? " turned ON" : " turned OFF");
-  }
-}
-
-// Turn all lasers ON or OFF
-void controlAllLasers(bool turnOn) {
-  for (int i = 0; i < 5; i++) {
-    digitalWrite(LASER_PINS[i], turnOn ? HIGH : LOW);
-  }
-  Serial.println(turnOn ? "All lasers ON" : "All lasers OFF");
 }
 
 // Check if any beam is broken
