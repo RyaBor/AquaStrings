@@ -1,130 +1,109 @@
-#include <Arduino.h>
-#include <SPI.h>
-#include <SD.h>
+const int PHOTODIODE_PINS[5] = {34, 35, 32, 33, 27}; // Photodiode input pins
+const int LED_PINS[5] = {16, 26, 4, 25, 13};           // LED output pins
+const int NUM_SENSORS = 5;
 
-#define SD_CS         5
-#define SPI_MOSI      23
-#define SPI_MISO      19
-#define SPI_SCK       18
+// Threshold value to determine if laser is broken
+// Adjust this based on your photodiode readings
+const int THRESHOLD = 2000; // Mid-point for 10-bit ADC (0-1023)
 
-File root;
+// Variables to store previous states for change detection
+bool previousStates[NUM_SENSORS];
 
 void setup() {
+  // Initialize serial communication for debugging
   Serial.begin(115200);
-  delay(1000);
-  Serial.println("ESP32 SD Card Test");
   
-  // Initialize SPI bus for SD card
-  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-  
-  // Initialize SD card
-  Serial.println("Initializing SD card...");
-  if (!SD.begin(SD_CS)) {
-    Serial.println("SD card initialization failed!");
-    while (1);
+  // Configure LED pins as outputs
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    pinMode(LED_PINS[i], OUTPUT);
+    digitalWrite(LED_PINS[i], LOW); // Start with LEDs off
+    previousStates[i] = false;
   }
-  Serial.println("SD card initialized successfully.");
   
-  // List all files in SD card
-  root = SD.open("/");
-  Serial.println("Files on SD card:");
-  listFiles(root, 0);
+  // Photodiode pins are analog inputs by default on ESP32
+  // No need to set pinMode for analog pins
   
-  // Try to open each WAV file and read its header
-  checkWavFiles();
+  Serial.println("Laser Break Detection System Initialized");
+  Serial.println("Photodiode readings will be displayed...");
 }
 
 void loop() {
-  // Nothing to do here
-  delay(1000);
-}
-
-void listFiles(File dir, int numTabs) {
-  while (true) {
-    File entry = dir.openNextFile();
-    if (!entry) {
-      // No more files
-      break;
-    }
+  bool stateChanged = false;
+  
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    // Read photodiode value (0-1023 for 10-bit ADC)
+    int photodiodeValue = analogRead(PHOTODIODE_PINS[i]);
     
-    // Print file details
-    for (uint8_t i = 0; i < numTabs; i++) {
-      Serial.print('\t');
-    }
+    // Determine if laser is broken (photodiode reading below threshold)
+    bool laserBroken = photodiodeValue < THRESHOLD;
     
-    Serial.print(entry.name());
-    if (entry.isDirectory()) {
-      Serial.println("/");
-      listFiles(entry, numTabs + 1);
+    // Control LED based on laser state
+    if (laserBroken) {
+      digitalWrite(LED_PINS[i], HIGH); // Turn on LED when laser is broken
     } else {
-      // Print file size
-      Serial.print("\t\t");
-      Serial.print(entry.size(), DEC);
-      Serial.println(" bytes");
-    }
-    entry.close();
-  }
-}
-
-void checkWavFiles() {
-  root = SD.open("/");
-  
-  Serial.println("\nChecking WAV files:");
-  
-  while (true) {
-    File entry = root.openNextFile();
-    if (!entry) {
-      break;
+      digitalWrite(LED_PINS[i], LOW);  // Turn off LED when laser is connected
     }
     
-    String filename = entry.name();
-    if (!entry.isDirectory() && filename.endsWith(".wav")) {
-      Serial.print("Found WAV file: ");
-      Serial.println(filename);
+    // Check if state changed for debugging output
+    if (laserBroken != previousStates[i]) {
+      stateChanged = true;
+      previousStates[i] = laserBroken;
       
-      // Try to read and verify WAV header
-      char header[44]; // Standard WAV header is 44 bytes
-      size_t bytesRead = entry.read((uint8_t*)header, 44);
-      
-      if (bytesRead == 44) {
-        // Check if it's a valid WAV file
-        if (header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
-            header[8] == 'W' && header[9] == 'A' && header[10] == 'V' && header[11] == 'E') {
-          
-          // Extract sample rate
-          uint32_t sampleRate = header[24] | (header[25] << 8) | (header[26] << 16) | (header[27] << 24);
-          
-          // Extract number of channels
-          uint16_t numChannels = header[22] | (header[23] << 8);
-          
-          // Extract bits per sample
-          uint16_t bitsPerSample = header[34] | (header[35] << 8);
-          
-          Serial.print("  Sample Rate: ");
-          Serial.print(sampleRate);
-          Serial.print(" Hz, Channels: ");
-          Serial.print(numChannels);
-          Serial.print(", Bits Per Sample: ");
-          Serial.println(bitsPerSample);
-          
-          // Check if supported by ESP32 DAC
-          if (sampleRate > 44100) {
-            Serial.println("  WARNING: Sample rate may be too high for ESP32 DAC");
-          }
-          
-          if (bitsPerSample != 8 && bitsPerSample != 16) {
-            Serial.println("  WARNING: ESP32 works best with 8-bit or 16-bit samples");
-          }
-          
-        } else {
-          Serial.println("  Not a valid WAV file or header is corrupt");
-        }
+      Serial.print("Sensor ");
+      Serial.print(i + 1);
+      Serial.print(": ");
+      if (laserBroken) {
+        Serial.println("LASER BROKEN - LED ON");
       } else {
-        Serial.println("  Could not read header - file may be damaged");
+        Serial.println("Laser connected - LED off");
       }
     }
-    entry.close();
   }
   
-  Serial.println("WAV file check complete");
+  // Print readings for each string periodically
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 20) { // Print every 500ms
+    Serial.println("=== LASER STRING STATUS ===");
+    
+    for (int i = 0; i < NUM_SENSORS; i++) {
+      int reading = analogRead(PHOTODIODE_PINS[i]);
+      bool isBroken = reading < THRESHOLD;
+      
+      Serial.print("String ");
+      Serial.print(i + 1);
+      Serial.print(": Reading = ");
+      Serial.print(reading);
+      Serial.print(" | Status: ");
+      
+      if (isBroken) {
+        Serial.print("BROKEN (below ");
+        Serial.print(THRESHOLD);
+        Serial.println(")");
+      } else {
+        Serial.print("Connected (above ");
+        Serial.print(THRESHOLD);
+        Serial.println(")");
+      }
+    }
+    
+    // Summary of broken strings
+    Serial.print("Broken strings: ");
+    bool anyBroken = false;
+    for (int i = 0; i < NUM_SENSORS; i++) {
+      if (analogRead(PHOTODIODE_PINS[i]) < THRESHOLD) {
+        if (anyBroken) Serial.print(", ");
+        Serial.print(i + 1);
+        anyBroken = true;
+      }
+    }
+    if (!anyBroken) {
+      Serial.print("None");
+    }
+    Serial.println();
+    Serial.println(""); // Empty line for readability
+    
+    lastPrint = millis();
+  }
+  
+  delay(20); // Small delay to prevent excessive readings
 }
