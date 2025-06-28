@@ -1,154 +1,130 @@
-// Simple FreeRTOS 5-Laser System with Individual Laser Control
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <Arduino.h>
+#include <SPI.h>
+#include <SD.h>
 
-// ===== PIN CONFIGURATION =====
-const int PHOTODIODE_PINS[5] = {34, 35, 32, 33, 36}; // Photodiode input pins
+#define SD_CS         5
+#define SPI_MOSI      23
+#define SPI_MISO      19
+#define SPI_SCK       18
 
-// ===== SETTINGS =====
-int THRESHOLDS[5] = {2000, 2000, 2000, 2000, 2000}; // Individual threshold for each sensor
-const int POLL_RATE_MS = 10;       // How fast to check each sensor
-const int REPORT_RATE_MS = 500;    // How often to print status
+File root;
 
-// ===== SHARED DATA =====
-int sensorValues[5] = {0};          // Current photodiode readings
-bool beamBroken[5] = {false};       // True if beam is broken
-
-// ===== SENSOR TASKS (One per laser/photodiode pair) =====
-void sensorTask0(void *parameter) { sensorLoop(0); }
-void sensorTask1(void *parameter) { sensorLoop(1); }
-void sensorTask2(void *parameter) { sensorLoop(2); }
-void sensorTask3(void *parameter) { sensorLoop(3); }
-void sensorTask4(void *parameter) { sensorLoop(4); }
-
-// Generic sensor monitoring function
-void sensorLoop(int sensorNum) {
-  while (true) {
-    // Read photodiode
-    sensorValues[sensorNum] = analogRead(PHOTODIODE_PINS[sensorNum]);
-    
-    // Check if beam is broken
-    if (sensorValues[sensorNum] < THRESHOLDS[sensorNum]) {
-      beamBroken[sensorNum] = true;
-    } else {
-      beamBroken[sensorNum] = false;
-    }
-    
-    // Wait before next reading
-    vTaskDelay(pdMS_TO_TICKS(POLL_RATE_MS));
-  }
-}
-
-// ===== REPORTING TASK =====
-void reportTask(void *parameter) {
-  while (true) {
-    Serial.println("=== Laser Status ===");
-    
-    for (int i = 0; i < 5; i++) {
-      Serial.print("Laser ");
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.print(sensorValues[i]);
-      Serial.print(" (Threshold: ");
-      Serial.print(THRESHOLDS[i]);
-      Serial.print(") - ");
-      Serial.println(beamBroken[i] ? "BROKEN" : "OK");
-    }
-    
-    // Count broken beams
-    int brokenCount = 0;
-    for (int i = 0; i < 5; i++) {
-      if (beamBroken[i]) brokenCount++;
-    }
-    
-    if (brokenCount > 0) {
-      Serial.print("*** ");
-      Serial.print(brokenCount);
-      Serial.println(" BEAMS BROKEN! ***");
-    }
-    
-    Serial.println("==================");
-    
-    // Wait before next report
-    vTaskDelay(pdMS_TO_TICKS(REPORT_RATE_MS));
-  }
-}
-
-// ===== SETUP =====
 void setup() {
   Serial.begin(115200);
-  Serial.println("Simple FreeRTOS Laser System Starting...");
+  delay(1000);
+  Serial.println("ESP32 SD Card Test");
   
-  Serial.println("Lasers powered from external 5V source");
-  Serial.println("Creating sensor tasks...");
+  // Initialize SPI bus for SD card
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
   
-  // Create one task per sensor
-  xTaskCreate(sensorTask0, "Sensor0", 2048, NULL, 1, NULL);
-  xTaskCreate(sensorTask1, "Sensor1", 2048, NULL, 1, NULL);
-  xTaskCreate(sensorTask2, "Sensor2", 2048, NULL, 1, NULL);
-  xTaskCreate(sensorTask3, "Sensor3", 2048, NULL, 1, NULL);
-  xTaskCreate(sensorTask4, "Sensor4", 2048, NULL, 1, NULL);
+  // Initialize SD card
+  Serial.println("Initializing SD card...");
+  if (!SD.begin(SD_CS)) {
+    Serial.println("SD card initialization failed!");
+    while (1);
+  }
+  Serial.println("SD card initialized successfully.");
   
-  // Create reporting task
-  xTaskCreate(reportTask, "Reporter", 4096, NULL, 1, NULL);
+  // List all files in SD card
+  root = SD.open("/");
+  Serial.println("Files on SD card:");
+  listFiles(root, 0);
   
-  Serial.println("System ready!");
+  // Try to open each WAV file and read its header
+  checkWavFiles();
 }
 
-// ===== MAIN LOOP =====
 void loop() {
-  // FreeRTOS handles everything - this just keeps the system alive
-  vTaskDelay(pdMS_TO_TICKS(1000));
+  // Nothing to do here
+  delay(1000);
 }
 
-// ===== UTILITY FUNCTIONS =====
-
-// Set threshold for specific sensor
-void setThreshold(int sensorNum, int newThreshold) {
-  if (sensorNum >= 0 && sensorNum < 5) {
-    THRESHOLDS[sensorNum] = newThreshold;
-    Serial.print("Sensor ");
-    Serial.print(sensorNum + 1);
-    Serial.print(" threshold set to: ");
-    Serial.println(newThreshold);
-  } else {
-    Serial.println("Invalid sensor number (use 0-4)");
+void listFiles(File dir, int numTabs) {
+  while (true) {
+    File entry = dir.openNextFile();
+    if (!entry) {
+      // No more files
+      break;
+    }
+    
+    // Print file details
+    for (uint8_t i = 0; i < numTabs; i++) {
+      Serial.print('\t');
+    }
+    
+    Serial.print(entry.name());
+    if (entry.isDirectory()) {
+      Serial.println("/");
+      listFiles(entry, numTabs + 1);
+    } else {
+      // Print file size
+      Serial.print("\t\t");
+      Serial.print(entry.size(), DEC);
+      Serial.println(" bytes");
+    }
+    entry.close();
   }
 }
 
-// Set all thresholds at once
-void setAllThresholds(int newThreshold) {
-  for (int i = 0; i < 5; i++) {
-    THRESHOLDS[i] = newThreshold;
+void checkWavFiles() {
+  root = SD.open("/");
+  
+  Serial.println("\nChecking WAV files:");
+  
+  while (true) {
+    File entry = root.openNextFile();
+    if (!entry) {
+      break;
+    }
+    
+    String filename = entry.name();
+    if (!entry.isDirectory() && filename.endsWith(".wav")) {
+      Serial.print("Found WAV file: ");
+      Serial.println(filename);
+      
+      // Try to read and verify WAV header
+      char header[44]; // Standard WAV header is 44 bytes
+      size_t bytesRead = entry.read((uint8_t*)header, 44);
+      
+      if (bytesRead == 44) {
+        // Check if it's a valid WAV file
+        if (header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
+            header[8] == 'W' && header[9] == 'A' && header[10] == 'V' && header[11] == 'E') {
+          
+          // Extract sample rate
+          uint32_t sampleRate = header[24] | (header[25] << 8) | (header[26] << 16) | (header[27] << 24);
+          
+          // Extract number of channels
+          uint16_t numChannels = header[22] | (header[23] << 8);
+          
+          // Extract bits per sample
+          uint16_t bitsPerSample = header[34] | (header[35] << 8);
+          
+          Serial.print("  Sample Rate: ");
+          Serial.print(sampleRate);
+          Serial.print(" Hz, Channels: ");
+          Serial.print(numChannels);
+          Serial.print(", Bits Per Sample: ");
+          Serial.println(bitsPerSample);
+          
+          // Check if supported by ESP32 DAC
+          if (sampleRate > 44100) {
+            Serial.println("  WARNING: Sample rate may be too high for ESP32 DAC");
+          }
+          
+          if (bitsPerSample != 8 && bitsPerSample != 16) {
+            Serial.println("  WARNING: ESP32 works best with 8-bit or 16-bit samples");
+          }
+          
+        } else {
+          Serial.println("  Not a valid WAV file or header is corrupt");
+        }
+      } else {
+        Serial.println("  Could not read header - file may be damaged");
+      }
+    }
+    entry.close();
   }
-  Serial.print("All thresholds set to: ");
-  Serial.println(newThreshold);
-}
-
-// Print current thresholds
-void printThresholds() {
-  Serial.println("Current Thresholds:");
-  for (int i = 0; i < 5; i++) {
-    Serial.print("  Sensor ");
-    Serial.print(i + 1);
-    Serial.print(": ");
-    Serial.println(THRESHOLDS[i]);
-  }
-}
-
-// Check if any beam is broken
-bool anyBeamBroken() {
-  for (int i = 0; i < 5; i++) {
-    if (beamBroken[i]) return true;
-  }
-  return false;
-}
-
-// Get number of broken beams
-int getBrokenBeamCount() {
-  int count = 0;
-  for (int i = 0; i < 5; i++) {
-    if (beamBroken[i]) count++;
-  }
-  return count;
+  
+  Serial.println("WAV file check complete");
 }
