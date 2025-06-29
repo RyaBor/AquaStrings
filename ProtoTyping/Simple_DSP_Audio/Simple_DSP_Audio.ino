@@ -11,7 +11,7 @@
 
 // I2S configuration for internal DAC
 #define I2S_NUM           I2S_NUM_0
-#define I2S_SAMPLE_RATE   22050  // Match your WAV file sample rate
+#define I2S_SAMPLE_RATE   48000  // Match your WAV file sample rate
 #define I2S_BUFFER_SIZE   512
 #define I2S_DAC_CHANNEL   I2S_DAC_CHANNEL_RIGHT_EN  // GPIO25 (DAC channel 1)
 
