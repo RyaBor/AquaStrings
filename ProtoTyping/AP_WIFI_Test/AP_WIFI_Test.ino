@@ -99,6 +99,7 @@ void webServerTask(void *pvParameters) {
 }
 
 void setup() {
+  delay(250); // Add a short delay
   Serial.begin(115200);
   
   pinMode(outputPin, OUTPUT);
