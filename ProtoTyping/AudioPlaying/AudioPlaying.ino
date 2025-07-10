@@ -47,7 +47,7 @@ void setup() {
 
     // --- Set the Gain ---
     // Gain can be from -28dB to +30dB. A good starting point is 24dB.
-    audioamp.setGain(-10);
+    audioamp.setGain(10);
     Serial.printf("Amplifier gain set to: %d dB\n", audioamp.getGain());
 
     // --- Check for PSRAM ---
