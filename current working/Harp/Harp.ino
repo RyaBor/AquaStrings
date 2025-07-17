@@ -1,5 +1,6 @@
 // --- INCLUDES ---
 #include "driver/i2s.h"
+#include "driver/adc.h" // ADDED: For modern ADC functions
 #include "SD.h"
 #include "SPI.h"
 #include <Wire.h>
@@ -14,7 +15,19 @@
 #define SPI_MISO_PIN 19
 #define SPI_SCK_PIN  18
 #define CONSTANT_HIGH_PIN 17 // Pin to be set and kept high
-const int PHOTODIODE_PINS[5] = {34, 35, 32, 33, 27};
+
+// CORRECTED PINS: Pin 16 is not an ADC pin. It has been replaced with 36.
+// You must use valid ADC pins (e.g., GPIOs 32-39 on most ESP32s).
+const int PHOTODIODE_PINS[5] = {34, 35, 32, 33, 36}; 
+
+// ADDED: Map GPIO pins to their corresponding ADC1 channel enums
+const adc1_channel_t ADC_CHANNELS[5] = {
+    ADC1_CHANNEL_6, // Corresponds to GPIO 34
+    ADC1_CHANNEL_7, // Corresponds to GPIO 35
+    ADC1_CHANNEL_4, // Corresponds to GPIO 32
+    ADC1_CHANNEL_5, // Corresponds to GPIO 33
+    ADC1_CHANNEL_0  // Corresponds to GPIO 36
+};
 
 // --- GLOBAL CONSTANTS ---
 const int NUM_SENSORS = 5;
@@ -71,6 +84,16 @@ bool initializeI2S(const WavHeader& header);
 void setup() {
     Serial.begin(115200);
     Serial.println("\n--- Laser Harp System Initializing (8-bit/96kHz Audio) ---");
+
+    // --- ADC INITIALIZATION (REPLACED) ---
+    Serial.println("Configuring ADC channels...");
+    // Set the resolution to 12-bit (0-4095), same as analogRead
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    // Configure the attenuation for each channel for a full 0-3.3V input range
+    for (int i = 0; i < NUM_SENSORS; i++) {
+        adc1_config_channel_atten(ADC_CHANNELS[i], ADC_ATTEN_DB_11);
+    }
+    Serial.println("ADC OK.");
 
     // --- Set Pin 17 HIGH ---
     pinMode(CONSTANT_HIGH_PIN, OUTPUT);
@@ -134,7 +157,8 @@ void setup() {
 // =================================================================
 void loop() {
     for (int i = 0; i < NUM_SENSORS; i++) {
-        int photodiodeValue = analogRead(PHOTODIODE_PINS[i]);
+        // MODIFIED: Use the modern ESP-IDF function instead of analogRead()
+        int photodiodeValue = adc1_get_raw(ADC_CHANNELS[i]);
         bool laserBroken = photodiodeValue < TRIGGER_THRESHOLD;
 
         if (laserBroken != pendingStates[i]) {
