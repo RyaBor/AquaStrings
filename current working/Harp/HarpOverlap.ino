@@ -27,11 +27,13 @@ const adc1_channel_t ADC_CHANNELS[5] = {
 // --- GLOBAL CONSTANTS ---
 const int NUM_SENSORS = 5;
 const int WAV_HEADER_SIZE = 44;
-const size_t MIXER_BUFFER_SAMPLES = 512; 
+// MODIFIED: Smaller software buffer for lower latency
+const size_t MIXER_BUFFER_SAMPLES = 128; 
 
 // --- MANUAL THRESHOLD & DEBOUNCING ---
-const int TRIGGER_THRESHOLD = 2000;
-const int DEBOUNCE_DELAY = 50;
+const int TRIGGER_THRESHOLD = 3000;
+// MODIFIED: Reduced debounce delay for faster response
+const int DEBOUNCE_DELAY = 20;
 bool previousStates[NUM_SENSORS];
 bool pendingStates[NUM_SENSORS];
 unsigned long lastChangeTime[NUM_SENSORS];
@@ -75,7 +77,7 @@ bool initializeI2S(const WavHeader& header);
 // =================================================================
 void setup() {
     Serial.begin(115200);
-    Serial.println("\n--- Laser Harp System Initializing (Corrected 8-Bit DAC Logic) ---");
+    Serial.println("\n--- Laser Harp System Initializing (Low Latency) ---");
 
     // --- ADC INITIALIZATION ---
     Serial.println("Configuring ADC channels...");
@@ -95,7 +97,7 @@ void setup() {
         Serial.println("FATAL: TPA2016 amplifier not found. Halting.");
         while (1);
     }
-    audioamp.setGain(0); // Start with zero gain
+    audioamp.setGain(0);
     Serial.printf("TPA2016 amplifier found! Gain: %d dB.\n", audioamp.getGain());
 
     if (!psramInit()) {
@@ -117,7 +119,7 @@ void setup() {
     }
     Serial.println("All WAV files loaded successfully.");
 
-    Serial.println("Initializing I2S audio driver...");
+    Serial.println("Initializing I2S audio driver for low latency...");
     if (!initializeI2S(((AudioNote&)notes[0]).header)) { 
         Serial.println("FATAL: Failed to initialize I2S driver. Halting.");
         while(true);
@@ -153,19 +155,14 @@ void loop() {
             if (pendingStates[i] != previousStates[i]) {
                 previousStates[i] = pendingStates[i];
                 if (pendingStates[i]) {
-                    Serial.printf("Sensor %d: ---> LASER BROKEN <---\n", i + 1);
-                    
                     // Re-trigger the note by resetting its state
                     notes[i].current_position = WAV_HEADER_SIZE;
                     notes[i].isPlaying = true;
-                    
-                } else {
-                    Serial.printf("Sensor %d: Laser Reconnected\n", i + 1);
                 }
             }
         }
     }
-    delay(5);
+    // MODIFIED: Removed delay for faster sensor scanning.
 }
 
 // =================================================================
@@ -176,25 +173,16 @@ void loop() {
  * @brief Main audio mixer task with corrected 8-bit logic for the internal DAC.
  */
 void audioMixerTask(void *pvParameters) {
-    // This buffer holds the final 16-bit stereo data formatted for the I2S driver.
     uint16_t i2s_output_buffer[MIXER_BUFFER_SAMPLES * 2];
 
     while (true) {
-        // --- MIXING LOOP ---
         for (int i = 0; i < MIXER_BUFFER_SAMPLES; i++) {
-            // Use a 32-bit accumulator to prevent overflow when adding samples.
             int32_t mixed_sample = 0;
-
-            // Check every possible note source.
             for (int j = 0; j < NUM_SENSORS; j++) {
                 if (notes[j].isPlaying) {
                     if (notes[j].current_position < notes[j].size) {
-                        // Get the 8-bit unsigned sample (0-255).
                         uint8_t sample8bit = notes[j].buffer[notes[j].current_position];
-                        
-                        // 1. Convert to signed 8-bit space (-128 to 127) for mixing.
                         mixed_sample += (int16_t)(sample8bit - 128);
-
                         notes[j].current_position++;
                     } else {
                         notes[j].isPlaying = false;
@@ -202,27 +190,16 @@ void audioMixerTask(void *pvParameters) {
                 }
             }
 
-            // --- ATTENUATION & CLAMPING (8-BIT) ---
-            // Optional: If you play multiple notes and it clips, uncomment the next line.
-            // mixed_sample /= NUM_SENSORS; 
-
-            // 2. Clamp the mixed sample to the signed 8-bit range.
             if (mixed_sample > 127) mixed_sample = 127;
             if (mixed_sample < -128) mixed_sample = -128;
 
-            // 3. Convert back to an unsigned 8-bit sample for the DAC.
             uint8_t final_8bit_sample = (uint8_t)(mixed_sample + 128);
-
-            // 4. Format for the I2S driver.
-            // The 8-bit sample must be in the most significant bits of the 16-bit word.
             uint16_t i2s_sample = ((uint16_t)final_8bit_sample) << 8;
 
-            // Write the final formatted sample to the stereo output buffer.
-            i2s_output_buffer[i * 2]     = i2s_sample; // Left channel
-            i2s_output_buffer[i * 2 + 1] = i2s_sample; // Right channel
+            i2s_output_buffer[i * 2]     = i2s_sample;
+            i2s_output_buffer[i * 2 + 1] = i2s_sample;
         }
 
-        // --- WRITE TO I2S ---
         size_t bytes_written = 0;
         i2s_write(I2S_NUM_0, i2s_output_buffer, sizeof(i2s_output_buffer), &bytes_written, portMAX_DELAY);
     }
@@ -237,8 +214,9 @@ bool initializeI2S(const WavHeader& header) {
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
         .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_MSB),
         .intr_alloc_flags = 0,
-        .dma_buf_count = 8,
-        .dma_buf_len = 1024,
+        // MODIFIED: Smaller DMA buffers for lower audio pipeline latency
+        .dma_buf_count = 4,
+        .dma_buf_len = 256,
         .use_apll = false,
         .tx_desc_auto_clear = true
     };
