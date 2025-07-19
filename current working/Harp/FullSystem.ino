@@ -18,7 +18,7 @@
 // Dial control pins - using available pins (4, 15, 2)
 #define DIAL_LEFT_PIN 4   // Safe input pin
 #define DIAL_RIGHT_PIN 15 // Strapping pin but works as input with pull-up
-#define STATUS_LED_PIN 13
+#define LASER_CONTROL_PIN 13
 #define CONSTANT_HIGH_PIN 2  // Strapping pin - HIGH=pump ON (good for boot)
 
 const int PHOTODIODE_PINS[5] = {34, 35, 32, 33, 36};
@@ -36,7 +36,7 @@ const int WAV_HEADER_SIZE = 44;
 const size_t MIXER_BUFFER_SAMPLES = 128; 
 
 // --- MANUAL THRESHOLD & DEBOUNCING ---
-const int TRIGGER_THRESHOLD = 3000;
+const int TRIGGER_THRESHOLD = 3200;
 const int DEBOUNCE_DELAY = 20;
 bool previousStates[NUM_SENSORS];
 bool pendingStates[NUM_SENSORS];
@@ -103,8 +103,8 @@ void setup() {
     // --- DIAL CONTROL INITIALIZATION ---
     pinMode(DIAL_LEFT_PIN, INPUT_PULLUP);
     pinMode(DIAL_RIGHT_PIN, INPUT_PULLUP);
-    pinMode(STATUS_LED_PIN, OUTPUT);
-    digitalWrite(STATUS_LED_PIN, HIGH); // Status LED on during initialization
+    pinMode(LASER_CONTROL_PIN, OUTPUT);
+    digitalWrite(LASER_CONTROL_PIN, LOW); // Start with lasers off
 
     // --- BASIC HARDWARE INITIALIZATION ---
     pinMode(CONSTANT_HIGH_PIN, OUTPUT);
@@ -225,6 +225,7 @@ void handleSystemStateChange() {
         case SYSTEM_OFF:
             Serial.println("Switching to: SYSTEM OFF");
             digitalWrite(CONSTANT_HIGH_PIN, LOW);  // Turn off pump
+            digitalWrite(LASER_CONTROL_PIN, LOW);  // Turn off lasers
             if (audioSystemInitialized) {
                 shutdownAudioSystem();
             }
@@ -233,6 +234,7 @@ void handleSystemStateChange() {
         case PUMP_ONLY:
             Serial.println("Switching to: PUMP ONLY");
             digitalWrite(CONSTANT_HIGH_PIN, HIGH); // Turn on pump
+            digitalWrite(LASER_CONTROL_PIN, LOW);  // Turn off lasers
             if (audioSystemInitialized) {
                 shutdownAudioSystem();
             }
@@ -241,6 +243,7 @@ void handleSystemStateChange() {
         case FULL_SYSTEM:
             Serial.println("Switching to: FULL SYSTEM");
             digitalWrite(CONSTANT_HIGH_PIN, HIGH); // Turn on pump
+            digitalWrite(LASER_CONTROL_PIN, HIGH); // Turn on lasers
             if (!audioSystemInitialized) {
                 delay(500); // Give system time to stabilize
                 if (initializeAudioSystem()) {
@@ -249,6 +252,7 @@ void handleSystemStateChange() {
                     Serial.println("Failed to initialize audio system");
                     // Fall back to pump only
                     currentSystemState = PUMP_ONLY;
+                    digitalWrite(LASER_CONTROL_PIN, LOW); // Turn off lasers if fallback
                 }
             }
             break;
