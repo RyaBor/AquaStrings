@@ -27,7 +27,7 @@ const adc1_channel_t ADC_CHANNELS[5] = {
 };
 
 // --- WIFI CONFIGURATION ---
-const char* ap_ssid = "AquaStrings-AP";
+const char* ap_ssid = "AquaStrings";
 
 // --- GLOBAL CONSTANTS ---
 const int NUM_SENSORS = 5;
