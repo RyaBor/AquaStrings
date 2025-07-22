@@ -54,8 +54,8 @@ SystemState previousSystemState = SYSTEM_OFF;
 
 // --- AUDIO FILE CONFIGURATION ---
 const char* noteFiles[NUM_SENSORS] = {
-    "/HNotes/C.wav", "/HNotes/D.wav", "/HNotes/E.wav",
-    "/HNotes/G.wav", "/HNotes/A.wav"
+    "/CMajor/1C.wav", "/CMajor/2D.wav", "/CMajor/3E.wav",
+    "/CMajor/4G.wav", "/CMajor/5A.wav"
 };
 
 // --- AUDIO DATA STRUCTURES ---
